@@ -55,7 +55,11 @@ button:hover{border-color:var(--acc);transform:translateY(-1px)}
 .chart{margin-top:18px}
 .chart svg{width:100%;height:auto;display:block}
 .err{color:var(--neg);font-size:14px;margin-top:10px;min-height:20px}
-.how{margin-top:18px}
+.how,.tabla{margin-top:18px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:15px}
+th,td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:600;font-size:14px}
 .how p{margin:0 0 8px;color:var(--mute);font-size:15px}
 .how code{background:var(--field);border:1px solid var(--line);padding:2px 7px;border-radius:7px;color:var(--ink);font-size:14px}
 .autor{margin-top:22px;font-size:15px;color:#d6efe9}.autor b{color:#fff;font-weight:600}
@@ -76,8 +80,9 @@ footer{max-width:1000px;margin:0 auto;padding:0 16px 36px;text-align:center;colo
 <h2>Datos del proyecto</h2>
 <div class="row2">
 <div><label for="inv">Inversión inicial</label><div class="inp"><i>Q</i><input id="inv" type="number" min="0" step="any" value="100000"></div></div>
-<div><label for="tasa">Tasa de descuento</label><div class="inp pct"><input id="tasa" type="number" step="any" value="10"><i>%</i></div></div>
+<div><label for="tasa">Tasa de descuento (TMR)</label><div class="inp pct"><input id="tasa" type="number" step="any" value="10"><i>%</i></div></div>
 </div>
+<div style="margin:-6px 0 20px"><label for="resc">Valor de rescate (se suma al último periodo)</label><div class="inp"><i>Q</i><input id="resc" type="number" min="0" step="any" value="0"></div></div>
 <label>Flujo neto de cada periodo</label>
 <div id="flows"></div>
 <div class="btns">
@@ -101,14 +106,18 @@ footer{max-width:1000px;margin:0 auto;padding:0 16px 36px;text-align:center;colo
 <div class="kpi"><span class="lbl">Promedio por periodo</span><b id="rProm">–</b></div>
 <div class="kpi"><span class="lbl">Ganancia neta</span><b id="rGan">–</b></div>
 <div class="kpi"><span class="lbl">VAN a la tasa indicada</span><b id="rVan">–</b></div>
+<div class="kpi"><span class="lbl">Índice de rentabilidad</span><b id="rIdx">–</b></div>
+<div class="kpi"><span class="lbl">Recuperación de la inversión</span><b id="rRec">–</b></div>
 </div>
 <div class="chart" id="chart"></div>
 <div class="err" id="err"></div>
 </section>
 </div>
+<section class="card tabla"><h2>Flujos de efectivo (Q)</h2><div style="overflow-x:auto"><table><thead><tr><th>Periodo</th><th>Flujo</th><th>Valor presente</th><th>Acumulado neto</th></tr></thead><tbody id="tb"></tbody></table></div></section>
 <section class="card how">
 <h2>Cómo se calcula</h2>
 <p><b>TIR:</b> es la tasa <code>r</code> que hace el VAN igual a cero: <code>0 = −Inversión + Σ Flujo<sub>t</sub> / (1+r)<sup>t</sup></code>. Se resuelve con bisección numérica.</p>
+<p><b>Valor de rescate:</b> lo que se recupera al final del proyecto; se suma al flujo del último periodo. <b>Índice de rentabilidad:</b> <code>VP de los flujos / Inversión</code> (mayor que 1 conviene). <b>Recuperación:</b> periodos que tarda la suma de flujos en igualar la inversión.</p>
 <p><b>Rentabilidad total:</b> <code>(Suma de flujos − Inversión) / Inversión × 100</code>. <b>Promedio por periodo:</b> la rentabilidad total entre el número de periodos.</p>
 </section>
 </main>
@@ -158,7 +167,9 @@ function countTo(el,target){
 function calc(){
   const inv=parseFloat($('inv').value),tasa=parseFloat($('tasa').value)/100||0;
   const fl=[...$('flows').querySelectorAll('input')].map(i=>parseFloat(i.value)||0);
-  ['rTir','rRent','rProm','rGan','rVan'].forEach(k=>{$(k).textContent='–';$(k).classList.remove('neg');});
+  const resc=parseFloat($('resc').value)||0;if(fl.length)fl[fl.length-1]+=resc;
+  $('tb').innerHTML='';
+  ['rTir','rRent','rProm','rGan','rVan','rIdx','rRec'].forEach(k=>{$(k).textContent='–';$(k).classList.remove('neg');});
   $('chart').innerHTML='';$('err').textContent='';$('arc').setAttribute('stroke-dasharray','0 100');shown=0;
   if(!(inv>0)){$('err').textContent='Ingresa una inversión inicial mayor que cero.';return;}
   if(!fl.length||fl.every(x=>x===0)){$('err').textContent='Agrega al menos un flujo distinto de cero.';return;}
@@ -167,15 +178,22 @@ function calc(){
   if(t===null)$('err').textContent='No existe TIR: los flujos nunca recuperan la inversión.';
   else{countTo($('rTir'),t*100);$('arc').setAttribute('stroke-dasharray',Math.max(0,Math.min(100,t*100/50*100))+' 100');}
   const vals={rRent:rent,rProm:prom,rGan:gan,rVan:van};
+  const vp=fl.reduce((a,f,k)=>a+f/Math.pow(1+tasa,k+1),0);
+  $('rIdx').textContent=(vp/inv).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+  let cum=0,rec=null;fl.forEach((f,k)=>{if(rec===null&&cum+f>=inv&&f>0)rec=k+(inv-cum)/f;cum+=f;});
+  $('rRec').textContent=rec===null?'No se recupera':rec.toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2})+' periodos';
+  let ac=-inv,rows='<tr><td>0</td><td>'+fmtQ(-inv)+'</td><td>'+fmtQ(-inv)+'</td><td>'+fmtQ(-inv)+'</td></tr>';
+  fl.forEach((f,k)=>{ac+=f;rows+='<tr><td>'+(k+1)+'</td><td>'+fmtQ(f)+'</td><td>'+fmtQ(f/Math.pow(1+tasa,k+1))+'</td><td'+(ac<0?' class="neg"':'')+'>'+fmtQ(ac)+'</td></tr>';});
+  $('tb').innerHTML=rows;
   $('rRent').textContent=fmtP(rent);$('rProm').textContent=fmtP(prom);$('rGan').textContent=fmtQ(gan);$('rVan').textContent=fmtQ(van);
   Object.keys(vals).forEach(k=>{if(vals[k]<0)$(k).classList.add('neg');});
   $('chart').innerHTML=chart(cf);
 }
-function load(inv,arr){$('inv').value=inv;$('flows').innerHTML='';arr.forEach(addRow);calc();}
+function load(inv,arr){$('inv').value=inv;$('resc').value=0;$('flows').innerHTML='';arr.forEach(addRow);calc();}
 $('add').onclick=()=>{addRow();};
 $('ej').onclick=()=>load(100000,[30000,35000,40000,45000,50000]);
-$('clr').onclick=()=>{$('inv').value='';$('flows').innerHTML='';addRow();calc();};
-$('inv').addEventListener('input',calc);$('tasa').addEventListener('input',calc);
+$('clr').onclick=()=>{$('inv').value='';$('resc').value=0;$('flows').innerHTML='';addRow();calc();};
+$('inv').addEventListener('input',calc);$('tasa').addEventListener('input',calc);$('resc').addEventListener('input',calc);
 load(100000,[30000,35000,40000,45000,50000]);
 </script>
 </body>
